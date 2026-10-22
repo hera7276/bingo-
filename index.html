@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 협동 빙고 (Co-op Bingo)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Canvas Confetti for Victory Celebration -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;600;700;800&display=swap');
+    
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      user-select: none;
+    }
+    .font-jua {
+      font-family: 'Jua', sans-serif;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(14, 165, 233, 0.3);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(14, 165, 233, 0.6);
+    }
+
+    .coop-cell {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .coop-cell:hover:not(:disabled) {
+      transform: translateY(-2px) scale(1.03);
+    }
+    .coop-cell:active:not(:disabled) {
+      transform: translateY(1px) scale(0.97);
+    }
+
+    @keyframes floatTrophy {
+      0%, 100% { transform: translateY(0) rotate(-3deg); }
+      50% { transform: translateY(-16px) rotate(3deg); }
+    }
+    .animate-trophy {
+      animation: floatTrophy 2.4s ease-in-out infinite;
+    }
+    
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }
+      50% { box-shadow: 0 0 40px rgba(56, 189, 248, 0.8); }
+    }
+    .glow-cyan {
+      animation: pulseGlow 2.5s infinite;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-950 via-sky-950 to-indigo-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="bg-slate-900/70 backdrop-blur-md border-b border-cyan-500/20 px-4 py-3 sticky top-0 z-30 flex items-center justify-between">
+    <div class="flex items-center space-x-2.5">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-400 via-sky-500 to-indigo-600 flex items-center justify-center text-white font-jua text-2xl shadow-lg shadow-cyan-500/25">
+        🤝
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="font-jua text-xl tracking-wide bg-gradient-to-r from-cyan-300 via-sky-400 to-indigo-300 bg-clip-text text-transparent">
+            CO-OP BINGO
+          </h1>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 font-bold uppercase">협동 모드</span>
+        </div>
+        <p class="text-xs text-sky-300/80">팀원과 상의하여 공동의 목표 빙고를 달성하세요!</p>
+      </div>
+    </div>
+
+    <!-- Global Controls -->
+    <div class="flex items-center space-x-2">
+      <button id="soundToggleBtn" class="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-cyan-500/30 text-cyan-200 transition" title="효과음 켜기/끄기">
+        <i id="soundIcon" data-lucide="volume-2" class="w-5 h-5"></i>
+      </button>
+      <div id="userInfoHeader" class="hidden items-center space-x-2 bg-sky-950/70 border border-cyan-500/30 px-3 py-1.5 rounded-lg text-sm">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="headerNickname" class="font-bold text-cyan-300 truncate max-w-[110px]"></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Toast Container -->
+  <div id="toastContainer" class="fixed top-16 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 flex flex-col p-3 md:p-6 max-w-7xl mx-auto w-full">
+
+    <!-- LOBBY SCREEN -->
+    <section id="lobbyScreen" class="flex-1 flex items-center justify-center">
+      <div class="w-full max-w-md bg-slate-900/90 backdrop-blur-xl border border-cyan-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        <div class="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -bottom-24 -left-24 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="text-center mb-6">
+          <div class="inline-block p-4 rounded-2xl bg-gradient-to-tr from-cyan-600 to-indigo-600 text-white shadow-xl shadow-cyan-500/30 mb-3">
+            <i data-lucide="users" class="w-10 h-10 animate-bounce"></i>
+          </div>
+          <h2 class="text-2xl font-jua text-white">협동 실시간 빙고</h2>
+          <p class="text-sm text-sky-200 mt-1">경쟁 대신 힘을 합쳐 함께 승리하는 빙고!</p>
+        </div>
+
+        <!-- Nickname Input -->
+        <div class="mb-5">
+          <label class="block text-xs font-semibold uppercase text-cyan-300 mb-1.5">플레이어 닉네임</label>
+          <div class="relative">
+            <i data-lucide="user" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-cyan-400"></i>
+            <input type="text" id="nicknameInput" maxlength="10" placeholder="닉네임 입력 (최대 10자)" 
+              class="w-full pl-11 pr-4 py-3 bg-slate-800/90 border border-cyan-500/40 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 transition">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-6">
+          <button id="createRoomBtn" class="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-cyan-600 to-sky-700 hover:from-cyan-500 hover:to-sky-600 border border-cyan-400/40 rounded-2xl shadow-lg shadow-cyan-950/60 transition transform active:scale-95 group">
+            <i data-lucide="plus-circle" class="w-7 h-7 text-yellow-300 mb-1 group-hover:scale-110 transition"></i>
+            <span class="font-jua text-base text-white">협동 방 만들기</span>
+            <span class="text-[11px] text-cyan-200">새 팀 방 개설</span>
+          </button>
+
+          <button id="showJoinPanelBtn" class="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-indigo-600 to-blue-700 hover:from-indigo-500 hover:to-blue-600 border border-indigo-400/40 rounded-2xl shadow-lg shadow-indigo-950/60 transition transform active:scale-95 group">
+            <i data-lucide="log-in" class="w-7 h-7 text-cyan-300 mb-1 group-hover:scale-110 transition"></i>
+            <span class="font-jua text-base text-white">방 코드로 참여</span>
+            <span class="text-[11px] text-indigo-200">초대 코드로 합류</span>
+          </button>
+        </div>
+
+        <!-- Join Room Sub-section -->
+        <div id="joinInputBox" class="border-t border-cyan-500/20 pt-4 hidden">
+          <label class="block text-xs font-semibold uppercase text-sky-300 mb-1.5">6자리 팀 방 코드</label>
+          <div class="flex space-x-2">
+            <input type="text" id="roomCodeInput" maxlength="6" placeholder="예: 782415" 
+              class="flex-1 uppercase font-mono tracking-widest text-center px-4 py-2.5 bg-slate-800/90 border border-sky-500/40 rounded-xl text-cyan-300 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 font-bold text-lg">
+            <button id="joinRoomBtn" class="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-jua rounded-xl shadow-md transition">
+              팀 합류
+            </button>
+          </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="mt-6 pt-4 border-t border-slate-800 text-xs text-sky-300/80 flex items-start space-x-2">
+          <i data-lucide="info" class="w-4 h-4 text-cyan-400 shrink-0 mt-0.5"></i>
+          <p>모든 팀원이 **단 하나의 공용 빙고판**을 공유합니다. 채팅으로 어떤 숫자를 누를지 함께 상의하고 제한된 스탬프 안에 목표 빙고(3줄)를 완성해 트로피를 획득하세요!</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- GAME ROOM SCREEN -->
+    <section id="gameScreen" class="hidden flex-1 flex flex-col gap-4">
+      
+      <!-- Room Info & Bar -->
+      <div class="bg-slate-900/80 backdrop-blur-md border border-cyan-500/30 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl">
+        <div class="flex items-center space-x-3">
+          <div class="bg-sky-950/70 border border-cyan-400/30 px-3 py-1.5 rounded-xl flex items-center space-x-2">
+            <span class="text-xs text-sky-300 font-semibold uppercase">팀 방 코드</span>
+            <span id="displayRoomCode" class="font-mono font-bold text-lg text-yellow-300 tracking-wider">------</span>
+            <button id="copyRoomCodeBtn" class="p-1 hover:text-white text-cyan-300 transition" title="코드 복사">
+              <i data-lucide="copy" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <div id="gameStatusBadge" class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">
+            대기중
+          </div>
+        </div>
+
+        <!-- Co-op Turn / Goal Stats & Actions -->
+        <div class="flex items-center space-x-3 ml-auto">
+          <div id="turnIndicator" class="hidden items-center space-x-2 px-3 py-1.5 rounded-xl bg-sky-950/80 border border-cyan-500/40">
+            <span class="text-xs text-sky-300">스탬프 선택 차례:</span>
+            <span id="currentTurnName" class="font-bold text-cyan-300 text-sm">--</span>
+          </div>
+
+          <button id="startGameBtn" class="hidden px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-jua rounded-xl shadow-lg shadow-emerald-500/20 font-bold transition">
+            협동 미션 시작!
+          </button>
+
+          <button id="leaveRoomBtn" class="p-2 rounded-xl bg-red-950/40 hover:bg-red-900/70 border border-red-500/30 text-red-300 transition" title="팀 나가기">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Layout: Co-op Board (Left) & Chat/Strategy (Right) -->
+      <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4">
+        
+        <!-- CO-OP BOARD (Col 8) -->
+        <div class="lg:col-span-8 flex flex-col space-y-4">
+          
+          <div class="bg-slate-900/85 backdrop-blur-md border border-cyan-500/30 rounded-3xl p-4 sm:p-6 shadow-2xl flex-1 flex flex-col justify-between">
+            
+            <!-- Target Bingo Lines & Remaining Stamper Gauge -->
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div class="flex items-center space-x-3">
+                <div>
+                  <span class="text-xs text-sky-300 uppercase font-semibold">협동 완성 줄 수</span>
+                  <div class="flex items-baseline space-x-1.5">
+                    <span id="coopBingoCount" class="font-jua text-4xl text-yellow-300">0</span>
+                    <span class="text-base font-bold text-sky-300">/ <span id="coopTargetCount">3</span> 줄 달성</span>
+                  </div>
+                </div>
+                <!-- Stars for completed lines -->
+                <div class="flex items-center space-x-1 pl-2" id="bingoStars">
+                  <span class="star-item text-slate-700 text-2xl font-bold">★</span>
+                  <span class="star-item text-slate-700 text-2xl font-bold">★</span>
+                  <span class="star-item text-slate-700 text-2xl font-bold">★</span>
+                </div>
+              </div>
+
+              <!-- Stamps quota -->
+              <div class="bg-slate-800/80 border border-cyan-500/30 px-3.5 py-2 rounded-2xl flex items-center space-x-3">
+                <i data-lucide="check-check" class="w-5 h-5 text-cyan-400"></i>
+                <div>
+                  <div class="text-[11px] text-sky-300">팀 남은 선택 기회</div>
+                  <div class="font-jua text-lg text-white">
+                    <span id="stampsLeftCount" class="text-yellow-400">15</span>
+                    <span class="text-xs text-sky-300/80">/ 최대 15회</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Shared 5x5 Grid Board -->
+            <div class="flex justify-center items-center my-auto py-2">
+              <div id="sharedBoardGrid" class="grid grid-cols-5 gap-2 sm:gap-3 w-full max-w-[480px] aspect-square p-2.5 sm:p-3 bg-slate-950/60 rounded-2xl border border-cyan-500/30 shadow-inner">
+                <!-- 25 Shared Cells generated by JS -->
+              </div>
+            </div>
+
+            <!-- Last team stamped badge -->
+            <div class="mt-4 pt-3 border-t border-cyan-500/20 flex items-center justify-between flex-wrap gap-2 text-xs">
+              <div class="flex items-center space-x-2">
+                <span class="text-sky-300">최근 팀원이 찍은 번호:</span>
+                <span id="lastStampedDisplay" class="font-jua text-base px-2.5 py-0.5 rounded-lg bg-cyan-400 text-slate-950 shadow">-</span>
+              </div>
+              <div class="flex items-center space-x-1.5 text-xs text-sky-300">
+                <i data-lucide="help-circle" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span>오른쪽 채팅창에서 번호를 함께 상의하세요!</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Team Members Strip -->
+          <div class="bg-slate-900/80 backdrop-blur-md border border-cyan-500/30 rounded-2xl p-3">
+            <h3 class="text-xs uppercase font-bold text-sky-300 tracking-wider mb-2 flex items-center justify-between">
+              <span>협동 팀원 목록</span>
+              <span id="playerCountBadge" class="text-yellow-400 font-bold">0명</span>
+            </h3>
+            <div id="playerListContainer" class="flex flex-wrap gap-2">
+              <!-- Team Member Badges -->
+            </div>
+          </div>
+
+        </div>
+
+        <!-- REAL-TIME STRATEGY CHAT (Col 4) -->
+        <div class="lg:col-span-4 flex flex-col space-y-4 h-[440px] lg:h-auto">
+          <div class="bg-slate-900/85 backdrop-blur-md border border-cyan-500/30 rounded-3xl p-4 shadow-2xl flex-1 flex flex-col h-full overflow-hidden">
+            
+            <div class="flex items-center justify-between pb-3 border-b border-cyan-500/20">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="messages-square" class="w-5 h-5 text-cyan-400"></i>
+                <h3 class="font-jua text-base text-white">팀 전략 회의실</h3>
+              </div>
+              <span class="text-[11px] text-cyan-300/80 bg-cyan-950/80 border border-cyan-500/30 px-2 py-0.5 rounded-full">실시간 연동</span>
+            </div>
+
+            <!-- Messages Container -->
+            <div id="chatMessages" class="flex-1 overflow-y-auto py-3 space-y-2 text-sm pr-1">
+              <div class="text-center py-4 text-xs text-sky-300/60">
+                팀원들과 어떤 번호를 스탬프할지 채팅으로 상의해보세요!
+              </div>
+            </div>
+
+            <!-- Quick Strategy Buttons -->
+            <div class="py-1.5 border-t border-cyan-500/10 flex gap-1.5 overflow-x-auto text-[11px]">
+              <button type="button" class="quick-chat-btn whitespace-nowrap px-2 py-1 rounded-lg bg-sky-950/80 border border-cyan-500/30 text-cyan-200 hover:bg-sky-900 transition">
+                "가로 줄 먼저 노려요!"
+              </button>
+              <button type="button" class="quick-chat-btn whitespace-nowrap px-2 py-1 rounded-lg bg-sky-950/80 border border-cyan-500/30 text-cyan-200 hover:bg-sky-900 transition">
+                "대각선 빙고 가능해요!"
+              </button>
+              <button type="button" class="quick-chat-btn whitespace-nowrap px-2 py-1 rounded-lg bg-sky-950/80 border border-cyan-500/30 text-cyan-200 hover:bg-sky-900 transition">
+                "가운데(13번) 찍어요!"
+              </button>
+            </div>
+
+            <!-- Chat Input Form -->
+            <form id="chatForm" class="pt-2 border-t border-cyan-500/20 flex gap-2">
+              <input type="text" id="chatInput" maxlength="80" placeholder="전략 제안 또는 메시지..." 
+                class="flex-1 bg-slate-800/90 border border-cyan-500/30 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+              <button type="submit" class="px-3.5 py-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 rounded-xl text-white shadow-md transition flex items-center justify-center">
+                <i data-lucide="send" class="w-4 h-4"></i>
+              </button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- CO-OP VICTORY / MISSION COMPLETE MODAL -->
+  <div id="victoryModal" class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-lg flex items-center justify-center p-4 hidden">
+    <div class="bg-gradient-to-b from-slate-900 via-sky-950 to-indigo-950 border-2 border-yellow-400/80 rounded-3xl p-6 sm:p-10 max-w-lg w-full text-center relative shadow-2xl glow-cyan overflow-hidden">
+      <!-- Glow effect -->
+      <div class="absolute -top-12 left-1/2 -translate-x-1/2 w-52 h-52 bg-yellow-400/20 rounded-full blur-3xl pointer-events-none"></div>
+
+      <!-- Animated 3D Golden Trophy -->
+      <div class="relative mb-3 flex justify-center">
+        <div class="text-7xl sm:text-8xl animate-trophy drop-shadow-[0_12px_24px_rgba(234,179,8,0.7)]">
+          🏆
+        </div>
+      </div>
+
+      <div class="inline-block px-4 py-1 rounded-full bg-yellow-400/20 border border-yellow-400/60 text-yellow-300 text-xs font-bold uppercase tracking-widest mb-2">
+        TEAM CO-OP VICTORY!
+      </div>
+
+      <h2 class="text-3xl sm:text-4xl font-jua text-white mb-2">
+        협동 미션 완벽 성공!
+      </h2>
+
+      <p class="text-sky-200 text-sm mb-4">
+        팀원들이 하나가 되어 목표 빙고를 완성했습니다!<br>
+        모든 팀원에게 황금 트로피를 수여합니다.
+      </p>
+
+      <!-- Hall of Fame (Team Members) -->
+      <div class="bg-slate-800/80 border border-cyan-500/30 rounded-2xl p-3 mb-6 text-left">
+        <div class="text-[11px] uppercase tracking-wider text-cyan-300 font-bold mb-2 flex items-center gap-1">
+          <i data-lucide="award" class="w-3.5 h-3.5 text-yellow-400"></i>
+          <span>승리한 팀 명예의 전당 (팀원 전원)</span>
+        </div>
+        <div id="winnerTeamList" class="flex flex-wrap gap-1.5">
+          <!-- Injected winners -->
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row gap-3 justify-center">
+        <button id="rematchBtn" class="flex-1 py-3 px-6 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-300 hover:to-amber-400 text-slate-950 font-jua text-lg rounded-2xl shadow-xl shadow-yellow-500/30 transition transform active:scale-95">
+          다음 챌린지 시작 (새 판)
+        </button>
+        <button id="modalLobbyBtn" class="py-3 px-5 bg-slate-800 hover:bg-slate-700 text-cyan-200 font-jua rounded-2xl border border-cyan-500/30 transition">
+          로비로 이동
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Alert/Info Modal -->
+  <div id="customDialogModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-cyan-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+      <div id="dialogIcon" class="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center bg-cyan-950/60 text-cyan-300">
+        <i data-lucide="info" class="w-6 h-6"></i>
+      </div>
+      <h3 id="dialogTitle" class="font-jua text-xl text-white mb-2">안내</h3>
+      <p id="dialogMessage" class="text-sm text-sky-200 mb-5 leading-relaxed">내용</p>
+      <button id="dialogCloseBtn" class="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white font-jua rounded-xl shadow transition">
+        확인
+      </button>
+    </div>
+  </div>
+
+  <!-- FIREBASE SCRIPTS & GAME LOGIC -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { 
+      getAuth, 
+      signInAnonymously, 
+      signInWithCustomToken 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { 
+      getFirestore, 
+      doc, 
+      setDoc, 
+      getDoc, 
+      updateDoc, 
+      onSnapshot, 
+      collection, 
+      addDoc 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // ----------------------------------------------------
+    // 1. Firebase Initialization & Auth
+    // ----------------------------------------------------
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'bingo-coop-app';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "DEMO_KEY",
+      authDomain: "demo.firebaseapp.com",
+      projectId: "demo-bingo-coop"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+    let userId = null;
+
+    const authReadyPromise = (async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          const userCred = await signInWithCustomToken(auth, __initial_auth_token);
+          currentUser = userCred.user;
+        } else {
+          const userCred = await signInAnonymously(auth);
+          currentUser = userCred.user;
+        }
+      } catch (err) {
+        console.warn("Auth token fallback to anonymous:", err);
+        const userCred = await signInAnonymously(auth);
+        currentUser = userCred.user;
+      }
+      userId = currentUser.uid;
+      return currentUser;
+    })();
+
+    // ----------------------------------------------------
+    // 2. Sound Effects Engine (Web Audio API)
+    // ----------------------------------------------------
+    let soundEnabled = true;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new AudioContextClass();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    const Sound = {
+      click() {
+        if (!soundEnabled) return;
+        try {
+          initAudio();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(450, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(750, audioCtx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.08);
+        } catch (e) {}
+      },
+      stamp() {
+        if (!soundEnabled) return;
+        try {
+          initAudio();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(320, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(620, audioCtx.currentTime + 0.14);
+          gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.14);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.14);
+        } catch (e) {}
+      },
+      lineComplete() {
+        if (!soundEnabled) return;
+        try {
+          initAudio();
+          const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+          notes.forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.09);
+            gain.gain.setValueAtTime(0.22, audioCtx.currentTime + idx * 0.09);
+            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + idx * 0.09 + 0.18);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime + idx * 0.09);
+            osc.stop(audioCtx.currentTime + idx * 0.09 + 0.18);
+          });
+        } catch (e) {}
+      },
+      victory() {
+        if (!soundEnabled) return;
+        try {
+          initAudio();
+          const notes = [440, 554.37, 659.25, 880, 1108.73];
+          notes.forEach((f, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(f, audioCtx.currentTime + i * 0.12);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime + i * 0.12);
+            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + i * 0.12 + 0.45);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime + i * 0.12);
+            osc.stop(audioCtx.currentTime + i * 0.12 + 0.45);
+          });
+        } catch (e) {}
+      }
+    };
+
+    // ----------------------------------------------------
+    // 3. State & Elements
+    // ----------------------------------------------------
+    let myNickname = '';
+    let currentRoomCode = null;
+    let roomUnsubscribe = null;
+    let chatUnsubscribe = null;
+    let currentRoomData = null;
+    let localBingoLines = 0;
+
+    const TARGET_BINGO_LINES = 3;
+    const MAX_STAMPS_ALLOWED = 16; // 16 stamps maximum to reach 3 lines in 5x5
+
+    const lobbyScreen = document.getElementById('lobbyScreen');
+    const gameScreen = document.getElementById('gameScreen');
+    const nicknameInput = document.getElementById('nicknameInput');
+    const createRoomBtn = document.getElementById('createRoomBtn');
+    const showJoinPanelBtn = document.getElementById('showJoinPanelBtn');
+    const joinInputBox = document.getElementById('joinInputBox');
+    const roomCodeInput = document.getElementById('roomCodeInput');
+    const joinRoomBtn = document.getElementById('joinRoomBtn');
+
+    const displayRoomCode = document.getElementById('displayRoomCode');
+    const copyRoomCodeBtn = document.getElementById('copyRoomCodeBtn');
+    const gameStatusBadge = document.getElementById('gameStatusBadge');
+    const turnIndicator = document.getElementById('turnIndicator');
+    const currentTurnName = document.getElementById('currentTurnName');
+    const startGameBtn = document.getElementById('startGameBtn');
+    const leaveRoomBtn = document.getElementById('leaveRoomBtn');
+
+    const coopBingoCount = document.getElementById('coopBingoCount');
+    const coopTargetCount = document.getElementById('coopTargetCount');
+    const stampsLeftCount = document.getElementById('stampsLeftCount');
+    const bingoStars = document.getElementById('bingoStars');
+    const sharedBoardGrid = document.getElementById('sharedBoardGrid');
+    const lastStampedDisplay = document.getElementById('lastStampedDisplay');
+    const playerCountBadge = document.getElementById('playerCountBadge');
+    const playerListContainer = document.getElementById('playerListContainer');
+
+    const chatForm = document.getElementById('chatForm');
+    const chatInput = document.getElementById('chatInput');
+    const chatMessages = document.getElementById('chatMessages');
+
+    const victoryModal = document.getElementById('victoryModal');
+    const winnerTeamList = document.getElementById('winnerTeamList');
+    const rematchBtn = document.getElementById('rematchBtn');
+    const modalLobbyBtn = document.getElementById('modalLobbyBtn');
+
+    const customDialogModal = document.getElementById('customDialogModal');
+    const dialogTitle = document.getElementById('dialogTitle');
+    const dialogMessage = document.getElementById('dialogMessage');
+    const dialogCloseBtn = document.getElementById('dialogCloseBtn');
+
+    const soundToggleBtn = document.getElementById('soundToggleBtn');
+    const soundIcon = document.getElementById('soundIcon');
+    const userInfoHeader = document.getElementById('userInfoHeader');
+    const headerNickname = document.getElementById('headerNickname');
+
+    coopTargetCount.textContent = TARGET_BINGO_LINES;
+
+    // ----------------------------------------------------
+    // 4. Helpers: Notifications & Board Generation
+    // ----------------------------------------------------
+    function showDialog(title, message) {
+      dialogTitle.textContent = title;
+      dialogMessage.textContent = message;
+      customDialogModal.classList.remove('hidden');
+    }
+
+    dialogCloseBtn.addEventListener('click', () => {
+      customDialogModal.classList.add('hidden');
+    });
+
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      const bg = type === 'success' ? 'bg-emerald-600/90' : type === 'warning' ? 'bg-amber-600/90' : 'bg-cyan-700/90';
+      toast.className = `${bg} backdrop-blur-md text-white text-xs px-4 py-2.5 rounded-xl shadow-lg border border-white/20 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto flex items-center space-x-2`;
+      toast.innerHTML = `<span>${message}</span>`;
+      document.getElementById('toastContainer').appendChild(toast);
+      
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('translate-y-2', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    soundToggleBtn.addEventListener('click', () => {
+      soundEnabled = !soundEnabled;
+      soundIcon.setAttribute('data-lucide', soundEnabled ? 'volume-2' : 'volume-x');
+      lucide.createIcons();
+      showToast(soundEnabled ? '효과음 켜짐' : '효과음 꺼짐');
+    });
+
+    function generateRandomBoard() {
+      const numbers = Array.from({ length: 25 }, (_, i) => i + 1);
+      for (let i = numbers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+      }
+      return numbers;
+    }
+
+    // ----------------------------------------------------
+    // 5. Firebase Document Ref Helpers
+    // ----------------------------------------------------
+    function getRoomDocRef(code) {
+      return doc(db, 'artifacts', appId, 'public', 'data', 'coop_rooms', code);
+    }
+
+    function getRoomChatCollectionRef(code) {
+      return collection(db, 'artifacts', appId, 'public', 'data', `coop_chats_${code}`);
+    }
+
+    // ----------------------------------------------------
+    // 6. Lobby & Room Join / Create
+    // ----------------------------------------------------
+    showJoinPanelBtn.addEventListener('click', () => {
+      Sound.click();
+      joinInputBox.classList.toggle('hidden');
+      if (!joinInputBox.classList.contains('hidden')) {
+        roomCodeInput.focus();
+      }
+    });
+
+    function getValidatedNickname() {
+      const nick = nicknameInput.value.trim();
+      if (!nick) {
+        showDialog('닉네임 입력 필요', '협동 팀에 참여할 닉네임을 입력해주세요!');
+        return null;
+      }
+      return nick;
+    }
+
+    createRoomBtn.addEventListener('click', async () => {
+      Sound.click();
+      const nick = getValidatedNickname();
+      if (!nick) return;
+
+      await authReadyPromise;
+      if (!currentUser) {
+        showDialog('인증 대기', '서버 연결 중입니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+
+      myNickname = nick;
+      updateHeaderNick(nick);
+
+      const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const sharedBoard = generateRandomBoard();
+
+      const initialRoomData = {
+        code: roomCode,
+        hostId: userId,
+        status: 'waiting', // 'waiting' | 'playing' | 'finished' | 'failed'
+        turnUserId: userId,
+        sharedBoard: sharedBoard,
+        stampedNumbers: [],
+        stampedHistory: [], // array of { number, stampedByNick, userId }
+        bingoLines: 0,
+        maxStamps: MAX_STAMPS_ALLOWED,
+        targetLines: TARGET_BINGO_LINES,
+        players: {
+          [userId]: {
+            nickname: nick,
+            isHost: true,
+            joinedAt: Date.now()
+          }
+        },
+        winnerTeam: null,
+        createdAt: Date.now()
+      };
+
+      try {
+        await setDoc(getRoomDocRef(roomCode), initialRoomData);
+        enterRoom(roomCode);
+        showToast(`협동 팀 방(${roomCode})이 개설되었습니다! 팀원을 초대하세요.`, 'success');
+      } catch (err) {
+        console.error("Error creating room:", err);
+        showDialog('방 생성 실패', '팀 방을 생성하지 못했습니다. 다시 시도해주세요.');
+      }
+    });
+
+    joinRoomBtn.addEventListener('click', async () => {
+      Sound.click();
+      const nick = getValidatedNickname();
+      if (!nick) return;
+
+      const code = roomCodeInput.value.trim();
+      if (code.length < 4) {
+        showDialog('방 코드 확인', '올바른 방 코드를 입력해주세요.');
+        return;
+      }
+
+      await authReadyPromise;
+      if (!currentUser) return;
+
+      myNickname = nick;
+      updateHeaderNick(nick);
+
+      try {
+        const roomRef = getRoomDocRef(code);
+        const snapshot = await getDoc(roomRef);
+
+        if (!snapshot.exists()) {
+          showDialog('방 없음', '존재하지 않는 팀 방입니다. 코드를 확인해주세요.');
+          return;
+        }
+
+        const data = snapshot.data();
+
+        // Add player to the team
+        await updateDoc(roomRef, {
+          [`players.${userId}`]: {
+            nickname: nick,
+            isHost: false,
+            joinedAt: Date.now()
+          }
+        });
+
+        enterRoom(code);
+        showToast(`${code}번 협동 방에 합류했습니다!`, 'success');
+      } catch (err) {
+        console.error("Error joining room:", err);
+        showDialog('입장 실패', '팀 방에 입장하는 중 문제가 발생했습니다.');
+      }
+    });
+
+    function updateHeaderNick(nick) {
+      headerNickname.textContent = nick;
+      userInfoHeader.classList.remove('hidden');
+      userInfoHeader.classList.add('flex');
+    }
+
+    // ----------------------------------------------------
+    // 7. Enter Room & Synchronize State
+    // ----------------------------------------------------
+    function enterRoom(code) {
+      currentRoomCode = code;
+      lobbyScreen.classList.add('hidden');
+      gameScreen.classList.remove('hidden');
+      displayRoomCode.textContent = code;
+
+      subscribeToRoom(code);
+      subscribeToChat(code);
+
+      sendChatMessage(`${myNickname} 님이 팀에 합류했습니다! 함께 힘내봐요! 🤝`, true);
+    }
+
+    function subscribeToRoom(code) {
+      if (roomUnsubscribe) roomUnsubscribe();
+
+      const roomRef = getRoomDocRef(code);
+      roomUnsubscribe = onSnapshot(roomRef, (snapshot) => {
+        if (!snapshot.exists()) {
+          showDialog('방 종료', '방이 삭제되었거나 종료되었습니다.');
+          leaveRoom();
+          return;
+        }
+
+        const data = snapshot.data();
+        currentRoomData = data;
+        handleRoomUpdate(data);
+      }, (error) => {
+        console.error("Room sync error:", error);
+      });
+    }
+
+    function handleRoomUpdate(data) {
+      // 1. Status badge
+      if (data.status === 'waiting') {
+        gameStatusBadge.textContent = '팀원 대기중';
+        gameStatusBadge.className = 'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-yellow-500/20 text-yellow-300 border border-yellow-500/40';
+      } else if (data.status === 'playing') {
+        gameStatusBadge.textContent = '협동 미션 진행중';
+        gameStatusBadge.className = 'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 animate-pulse';
+      } else if (data.status === 'finished') {
+        gameStatusBadge.textContent = '미션 성공!';
+        gameStatusBadge.className = 'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+      } else if (data.status === 'failed') {
+        gameStatusBadge.textContent = '기회 소진 (실패)';
+        gameStatusBadge.className = 'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/40';
+      }
+
+      // 2. Host controls
+      const isHost = data.hostId === userId;
+      if (isHost && data.status === 'waiting') {
+        startGameBtn.classList.remove('hidden');
+      } else {
+        startGameBtn.classList.add('hidden');
+      }
+
+      // 3. Turn Indicator
+      if (data.status === 'playing') {
+        turnIndicator.classList.remove('hidden');
+        turnIndicator.classList.add('flex');
+        const activePlayer = data.players[data.turnUserId];
+        const isMyTurn = data.turnUserId === userId;
+
+        currentTurnName.textContent = isMyTurn ? '나의 차례! (상의 후 클릭하세요)' : `${activePlayer ? activePlayer.nickname : '팀원'} 님의 차례`;
+        currentTurnName.className = isMyTurn ? 'font-jua text-yellow-300 text-sm animate-pulse' : 'font-bold text-cyan-300 text-sm';
+      } else {
+        turnIndicator.classList.add('hidden');
+        turnIndicator.classList.remove('flex');
+      }
+
+      // 4. Stamped stats
+      const stamped = data.stampedNumbers || [];
+      const remainingStamps = Math.max(0, (data.maxStamps || MAX_STAMPS_ALLOWED) - stamped.length);
+      stampsLeftCount.textContent = remainingStamps;
+      
+      const lastHistory = data.stampedHistory && data.stampedHistory.length > 0 
+        ? data.stampedHistory[data.stampedHistory.length - 1] 
+        : null;
+
+      lastStampedDisplay.textContent = lastHistory ? `${lastHistory.number} (${lastHistory.stampedByNick})` : '-';
+
+      // 5. Render Shared 5x5 Board
+      renderSharedBoard(data.sharedBoard, stamped);
+
+      // 6. Check Lines
+      const lines = checkBingoLines(data.sharedBoard, stamped);
+      if (lines !== localBingoLines) {
+        if (lines > localBingoLines) {
+          Sound.lineComplete();
+          showToast(`🎉 팀 빙고 ${lines}줄 완성! 조금만 더!`, 'success');
+        }
+        localBingoLines = lines;
+      }
+      updateBingoCounterUI(lines, data.targetLines || TARGET_BINGO_LINES);
+
+      // Verify Win Condition / Expiry Condition (Host acts as arbiter to prevent duplicates)
+      if (isHost && data.status === 'playing') {
+        if (lines >= (data.targetLines || TARGET_BINGO_LINES)) {
+          triggerCoopVictory(data.players);
+        } else if (remainingStamps <= 0) {
+          triggerCoopFailure();
+        }
+      }
+
+      // 7. Render Team list
+      renderTeamList(data.players, data.turnUserId);
+
+      // 8. Victory Modal Handler
+      if (data.status === 'finished' && data.winnerTeam) {
+        showVictoryScreen(data.winnerTeam);
+      } else {
+        victoryModal.classList.add('hidden');
+      }
+    }
+
+    // Render Shared Board Grid
+    function renderSharedBoard(boardArray = [], stampedArray = []) {
+      if (!boardArray || boardArray.length !== 25) return;
+      sharedBoardGrid.innerHTML = '';
+
+      const stampedSet = new Set(stampedArray);
+      const isMyTurn = currentRoomData?.status === 'playing' && currentRoomData?.turnUserId === userId;
+
+      boardArray.forEach((num, index) => {
+        const btn = document.createElement('button');
+        btn.id = `cell-${num}`;
+        const isStamped = stampedSet.has(num);
+
+        if (isStamped) {
+          btn.className = 'coop-cell relative rounded-xl font-jua text-lg sm:text-2xl flex items-center justify-center font-bold bg-gradient-to-tr from-cyan-600 via-sky-500 to-indigo-600 text-white shadow-lg shadow-cyan-500/30 border-2 border-yellow-300 scale-95 opacity-90';
+          btn.innerHTML = `<span>${num}</span><span class="absolute top-1 right-1 text-[10px] text-yellow-300">★</span>`;
+          btn.disabled = true;
+        } else {
+          btn.disabled = !isMyTurn;
+          btn.className = `coop-cell relative rounded-xl font-jua text-lg sm:text-2xl flex items-center justify-center font-bold transition ${
+            isMyTurn 
+              ? 'bg-slate-800/90 text-white hover:bg-cyan-900/60 border border-cyan-400 hover:border-yellow-300 cursor-pointer shadow-md' 
+              : 'bg-slate-900/60 text-sky-300/60 border border-slate-800 cursor-not-allowed'
+          }`;
+          btn.innerHTML = `<span>${num}</span>`;
+        }
+
+        btn.addEventListener('click', () => onSharedCellClick(num));
+        sharedBoardGrid.appendChild(btn);
+      });
+    }
+
+    // Click number cell on shared board
+    async function onSharedCellClick(number) {
+      if (!currentRoomData || currentRoomData.status !== 'playing') {
+        showToast('게임이 시작되지 않았습니다.', 'warning');
+        return;
+      }
+
+      if (currentRoomData.turnUserId !== userId) {
+        showToast('지금은 팀원의 차례입니다. 상의 후 기다려주세요!', 'warning');
+        return;
+      }
+
+      const stamped = currentRoomData.stampedNumbers || [];
+      if (stamped.includes(number)) return;
+
+      Sound.stamp();
+
+      const newStamped = [...stamped, number];
+      const newHistory = [...(currentRoomData.stampedHistory || []), {
+        number: number,
+        stampedByNick: myNickname,
+        userId: userId,
+        time: Date.now()
+      }];
+
+      // Rotate turn among team members
+      const playerIds = Object.keys(currentRoomData.players || {});
+      const currentIdx = playerIds.indexOf(userId);
+      const nextTurnUserId = playerIds[(currentIdx + 1) % playerIds.length];
+
+      try {
+        const roomRef = getRoomDocRef(currentRoomCode);
+        await updateDoc(roomRef, {
+          stampedNumbers: newStamped,
+          stampedHistory: newHistory,
+          turnUserId: nextTurnUserId
+        });
+
+        sendChatMessage(`🎯 [${myNickname}] 님이 상의 끝에 '${number}' 번을 스탬프했습니다!`, true);
+      } catch (err) {
+        console.error("Error updating shared stamp:", err);
+      }
+    }
+
+    // Calculate Bingo Lines on 5x5 board
+    function checkBingoLines(boardArray, stampedArray) {
+      if (!boardArray || boardArray.length !== 25) return 0;
+      const stampedSet = new Set(stampedArray);
+      let lines = 0;
+
+      // Rows
+      for (let r = 0; r < 5; r++) {
+        let full = true;
+        for (let c = 0; c < 5; c++) {
+          if (!stampedSet.has(boardArray[r * 5 + c])) {
+            full = false;
+            break;
+          }
+        }
+        if (full) lines++;
+      }
+
+      // Columns
+      for (let c = 0; c < 5; c++) {
+        let full = true;
+        for (let r = 0; r < 5; r++) {
+          if (!stampedSet.has(boardArray[r * 5 + c])) {
+            full = false;
+            break;
+          }
+        }
+        if (full) lines++;
+      }
+
+      // Diagonals
+      let d1 = true;
+      for (let i = 0; i < 5; i++) {
+        if (!stampedSet.has(boardArray[i * 5 + i])) {
+          d1 = false;
+          break;
+        }
+      }
+      if (d1) lines++;
+
+      let d2 = true;
+      for (let i = 0; i < 5; i++) {
+        if (!stampedSet.has(boardArray[i * 5 + (4 - i)])) {
+          d2 = false;
+          break;
+        }
+      }
+      if (d2) lines++;
+
+      return lines;
+    }
+
+    function updateBingoCounterUI(lines, target) {
+      coopBingoCount.textContent = lines;
+      const stars = bingoStars.querySelectorAll('.star-item');
+      stars.forEach((star, index) => {
+        if (index < lines) {
+          star.className = 'star-item text-yellow-300 text-2xl font-bold animate-pulse';
+        } else {
+          star.className = 'star-item text-slate-700 text-2xl font-bold';
+        }
+      });
+    }
+
+    // Host Victory / Failure Triggers
+    async function triggerCoopVictory(players) {
+      try {
+        const roomRef = getRoomDocRef(currentRoomCode);
+        const teamList = Object.values(players).map(p => p.nickname);
+        await updateDoc(roomRef, {
+          status: 'finished',
+          winnerTeam: teamList
+        });
+        sendChatMessage(`🏆 축하합니다! 팀 목표 빙고를 달성하여 승리 트로피를 차지했습니다!`, true);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function triggerCoopFailure() {
+      try {
+        const roomRef = getRoomDocRef(currentRoomCode);
+        await updateDoc(roomRef, {
+          status: 'failed'
+        });
+        showDialog('미션 실패', '남은 스탬프 기회를 모두 소진했습니다. 다음 판에서 다시 도전해보세요!');
+        sendChatMessage(`😢 아쉽게도 모든 선택 기회를 소진했습니다. 재경기에서 다시 도전하세요!`, true);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Render Team List
+    function renderTeamList(playersObj = {}, currentTurnId) {
+      playerListContainer.innerHTML = '';
+      const list = Object.entries(playersObj);
+      playerCountBadge.textContent = `${list.length}명 참여중`;
+
+      list.forEach(([id, player]) => {
+        const isTurn = id === currentTurnId && currentRoomData?.status === 'playing';
+        const isMe = id === userId;
+
+        const badge = document.createElement('div');
+        badge.className = `flex items-center space-x-2 px-3 py-1.5 rounded-xl border transition ${
+          isTurn 
+            ? 'bg-cyan-500/20 border-cyan-400 shadow-md ring-1 ring-cyan-400' 
+            : 'bg-slate-800/80 border-cyan-500/20'
+        }`;
+
+        badge.innerHTML = `
+          <div class="relative">
+            <div class="w-7 h-7 rounded-lg bg-gradient-to-tr ${isMe ? 'from-cyan-500 to-sky-400' : 'from-indigo-600 to-purple-600'} flex items-center justify-center font-bold text-xs text-white">
+              ${player.nickname ? player.nickname.charAt(0).toUpperCase() : '?'}
+            </div>
+            ${player.isHost ? '<span class="absolute -top-1 -right-1 text-[9px] bg-yellow-400 text-slate-950 font-black rounded-full px-1">방장</span>' : ''}
+          </div>
+          <div class="flex flex-col">
+            <span class="text-xs font-bold text-white flex items-center gap-1">
+              ${player.nickname} ${isMe ? '<span class="text-[10px] text-cyan-300">(나)</span>' : ''}
+            </span>
+            <span class="text-[10px] ${isTurn ? 'text-yellow-300 font-bold' : 'text-sky-300'}">
+              ${isTurn ? '선택 차례' : '협동 중'}
+            </span>
+          </div>
+        `;
+        playerListContainer.appendChild(badge);
+      });
+    }
+
+    // Victory Screen
+    function showVictoryScreen(teamMembers = []) {
+      winnerTeamList.innerHTML = '';
+      teamMembers.forEach(nick => {
+        const span = document.createElement('span');
+        span.className = 'px-3 py-1 rounded-xl bg-yellow-400/20 border border-yellow-400/50 text-yellow-300 font-jua text-sm flex items-center gap-1';
+        span.innerHTML = `<span>🏅</span><span>${nick}</span>`;
+        winnerTeamList.appendChild(span);
+      });
+
+      victoryModal.classList.remove('hidden');
+      Sound.victory();
+
+      if (typeof confetti === 'function') {
+        confetti({
+          particleCount: 130,
+          spread: 80,
+          origin: { y: 0.6 }
+        });
+        setTimeout(() => {
+          confetti({
+            particleCount: 80,
+            angle: 60,
+            spread: 60,
+            origin: { x: 0 }
+          });
+          confetti({
+            particleCount: 80,
+            angle: 120,
+            spread: 60,
+            origin: { x: 1 }
+          });
+        }, 300);
+      }
+    }
+
+    // Rematch / New Challenge
+    rematchBtn.addEventListener('click', async () => {
+      Sound.click();
+      if (!currentRoomCode || !currentRoomData) return;
+
+      const newBoard = generateRandomBoard();
+      const playerIds = Object.keys(currentRoomData.players || {});
+
+      try {
+        const roomRef = getRoomDocRef(currentRoomCode);
+        await updateDoc(roomRef, {
+          status: 'playing',
+          sharedBoard: newBoard,
+          stampedNumbers: [],
+          stampedHistory: [],
+          winnerTeam: null,
+          turnUserId: playerIds[0] || userId
+        });
+
+        victoryModal.classList.add('hidden');
+        sendChatMessage(`🔄 새로운 협동 판이 열렸습니다! 다시 한 번 힘을 합쳐 빙고를 완성해봐요!`, true);
+      } catch (e) {
+        console.error("Rematch reset failed:", e);
+      }
+    });
+
+    modalLobbyBtn.addEventListener('click', () => {
+      leaveRoom();
+    });
+
+    // Start Game
+    startGameBtn.addEventListener('click', async () => {
+      Sound.click();
+      if (!currentRoomCode || !currentRoomData) return;
+
+      const playerIds = Object.keys(currentRoomData.players || {});
+      try {
+        const roomRef = getRoomDocRef(currentRoomCode);
+        await updateDoc(roomRef, {
+          status: 'playing',
+          turnUserId: playerIds[0]
+        });
+        sendChatMessage(`🚀 협동 빙고 미션이 시작되었습니다! 채팅으로 번호를 상의하여 3줄을 완성하세요!`, true);
+      } catch (err) {
+        console.error(err);
+      }
+    });
+
+    // ----------------------------------------------------
+    // 8. Real-time Strategy Chat
+    // ----------------------------------------------------
+    function subscribeToChat(code) {
+      if (chatUnsubscribe) chatUnsubscribe();
+
+      const chatColl = getRoomChatCollectionRef(code);
+      chatUnsubscribe = onSnapshot(chatColl, (snapshot) => {
+        const messages = [];
+        snapshot.forEach((docSnap) => {
+          messages.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        // Memory sort (Rule 2)
+        messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        renderChat(messages);
+      }, (err) => {
+        console.error("Chat sync error:", err);
+      });
+    }
+
+    function renderChat(messages) {
+      chatMessages.innerHTML = '';
+      if (messages.length === 0) {
+        chatMessages.innerHTML = `<div class="text-center py-4 text-xs text-sky-300/60">아직 나눈 대화가 없습니다. 전략을 제안해보세요!</div>`;
+        return;
+      }
+
+      messages.forEach(msg => {
+        const isMe = msg.userId === userId;
+        const isSystem = msg.isSystem;
+
+        const row = document.createElement('div');
+
+        if (isSystem) {
+          row.className = 'text-center my-1';
+          row.innerHTML = `<span class="inline-block text-[11px] bg-sky-950/80 border border-cyan-500/20 text-yellow-300 px-2.5 py-0.5 rounded-full">${msg.text}</span>`;
+        } else {
+          row.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'}`;
+          row.innerHTML = `
+            <span class="text-[10px] text-sky-300 mb-0.5 px-1">${msg.nickname}</span>
+            <div class="max-w-[85%] rounded-2xl px-3 py-1.5 text-xs ${
+              isMe 
+                ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white rounded-br-sm' 
+                : 'bg-slate-800 text-sky-100 border border-cyan-500/20 rounded-bl-sm'
+            }">
+              ${escapeHtml(msg.text)}
+            </div>
+          `;
+        }
+        chatMessages.appendChild(row);
+      });
+
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    chatForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      chatInput.value = '';
+      sendChatMessage(text);
+    });
+
+    // Quick strategy shortcuts
+    document.querySelectorAll('.quick-chat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const msg = btn.innerText.replace(/"/g, '');
+        sendChatMessage(msg);
+      });
+    });
+
+    async function sendChatMessage(text, isSystem = false) {
+      if (!currentRoomCode) return;
+      try {
+        const chatColl = getRoomChatCollectionRef(currentRoomCode);
+        await addDoc(chatColl, {
+          userId: isSystem ? 'system' : userId,
+          nickname: isSystem ? '시스템' : myNickname,
+          text: text,
+          isSystem: isSystem,
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        console.error("Error sending message:", err);
+      }
+    }
+
+    function escapeHtml(text) {
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+      return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+    }
+
+    // ----------------------------------------------------
+    // 9. Leave & Copy Utilities
+    // ----------------------------------------------------
+    function leaveRoom() {
+      if (roomUnsubscribe) roomUnsubscribe();
+      if (chatUnsubscribe) chatUnsubscribe();
+
+      victoryModal.classList.add('hidden');
+      gameScreen.classList.add('hidden');
+      lobbyScreen.classList.remove('hidden');
+
+      currentRoomCode = null;
+      currentRoomData = null;
+      localBingoLines = 0;
+      updateBingoCounterUI(0, TARGET_BINGO_LINES);
+      showToast('로비로 돌아왔습니다.');
+    }
+
+    leaveRoomBtn.addEventListener('click', () => {
+      Sound.click();
+      leaveRoom();
+    });
+
+    copyRoomCodeBtn.addEventListener('click', () => {
+      if (!currentRoomCode) return;
+      try {
+        const dummy = document.createElement("textarea");
+        document.body.appendChild(dummy);
+        dummy.value = currentRoomCode;
+        dummy.select();
+        document.execCommand("copy");
+        document.body.removeChild(dummy);
+        showToast(`방 코드 [${currentRoomCode}] 복사 완료! 팀원에게 공유하세요.`, 'success');
+      } catch (e) {
+        showToast('클립보드 복사에 실패했습니다.');
+      }
+    });
+
+    lucide.createIcons();
+
+    window.addEventListener('load', () => {
+      nicknameInput.focus();
+    });
+  </script>
+</body>
+</html>
